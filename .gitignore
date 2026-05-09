@@ -1,0 +1,20 @@
+# Build output
+**/bin/
+**/obj/
+
+# Vendored game DLLs (symlinks to a local Vanguard Galaxy install or
+# a sibling publicized stub — never commit binaries).
+**/lib/
+
+# IDE / editor
+.vs/
+.idea/
+*.user
+*.suo
+*.swp
+*.swo
+.DS_Store
+
+# Local convenience
+*.local
+__pycache__/
