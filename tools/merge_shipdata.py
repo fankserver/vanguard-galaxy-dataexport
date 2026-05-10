@@ -43,7 +43,12 @@ CLASS_PLURAL = {
 # Fields the wiki's Module:Shipbox renders for shop requirements; we strip all
 # of these from the overlay when a ship is flagged notForSale.
 SHOP_FIELDS = ('playerLevel', 'shipyardLevel', 'shipyardRep',
-               'shipyardFaction', 'conquestRank')
+               'shipyardFactions', 'conquestRank')
+
+# Fields that have been retired from the schema. The merger drops them from
+# every entry on its next pass so the wiki module never has to support legacy
+# shapes once the migration is complete.
+REMOVED_FIELDS = frozenset({'shipyardFaction'})
 
 
 def load_faction_data(path: Path) -> tuple[dict[str, str], dict[tuple[str, str], str]]:
@@ -109,20 +114,33 @@ def overlay(key: str, dump: dict, faction_names: dict[str, str],
         out['shipyardLevel'] = (f"{int(min_lvl)} - {int(max_lvl)}"
                                 if max_lvl > 0 else f"{int(min_lvl)}+")
         prereqs = sr.get('FactionPrereqs') or []
+        # Game data: when a ship has multiple FactionPrereqs (e.g. Chisel Mk II
+        # at MiningGuild + Stranded), every prereq carries identical rep and
+        # conquestRank. We promote the list of factions to shipyardFactions and
+        # keep rep/rank as scalars (sourced from prereqs[0]).
+        named = [faction_names.get(p.get('Faction'), p.get('Faction'))
+                 for p in prereqs if p.get('Faction')]
         if prereqs:
-            fp = prereqs[0]
-            out['shipyardRep'] = fp.get('ReputationLevel')
-            fid = fp.get('Faction')
-            out['shipyardFaction'] = faction_names.get(fid, fid) if fid else None
-            cq = fp.get('ConquestRank')
+            head = prereqs[0]
+            out['shipyardRep'] = head.get('ReputationLevel')
+            fid = head.get('Faction')
+            cq = head.get('ConquestRank')
             if cq in (None, 'None', ''):
                 out['conquestRank'] = None
             else:
                 out['conquestRank'] = rank_names.get((fid, cq), cq) if fid else cq
         else:
-            out['shipyardRep']     = None
-            out['shipyardFaction'] = None
-            out['conquestRank']    = None
+            out['shipyardRep']  = None
+            out['conquestRank'] = None
+        # Empty list means "no faction prereq" — sold at independent shipyards.
+        # nil in ShipData would mean "data missing"; the empty list is explicit.
+        out['shipyardFactions'] = named if named else None
+    # Marade Wharf reissues are sold at Marade Wharf shipyards, not at the
+    # original builder's shipyards. The dump always reports the source ship's
+    # prereqs (or nil for civilian hulls), so we override the faction list for
+    # any *-Marade slug.
+    if key.endswith('-Marade'):
+        out['shipyardFactions'] = ['Marade Wharf']
     return out
 
 
@@ -171,6 +189,8 @@ def emit_field_value(name: str, val) -> str:
     if val is None:
         return 'nil'
     if name == 'hardpoints':
+        return '{' + ', '.join(lua_str(c) for c in val) + '}'
+    if name == 'shipyardFactions':
         return '{' + ', '.join(lua_str(c) for c in val) + '}'
     if name == 'sizeSummary':
         return '{' + ', '.join(f'{k}={int(v)}' for k, v in val.items()) + '}'
@@ -234,7 +254,17 @@ def main() -> int:
                 dump_entry = cands[0]
         if dump_entry is None:
             no_match.append(key)
-            chunks.append(f'  ["{key}"] = {{{body}}},\n')
+            # Even unmatched entries (authored-only, e.g. *-Marade reissues)
+            # need to track the live schema, so strip retired fields here too.
+            kept = [(ind, name, txt) for ind, name, txt in fields
+                    if name not in REMOVED_FIELDS]
+            # *-Marade reissues are sold at Marade Wharf shipyards. The game's
+            # ships.json doesn't carry these slugs, so we author the value here
+            # if (and only if) it isn't already set on the entry.
+            if key.endswith('-Marade') and not any(n == 'shipyardFactions' for _, n, _ in kept):
+                kept.append(('    ', 'shipyardFactions', '{"Marade Wharf"}'))
+            body_out = '\n'.join(f'    {name:13s} = {txt},' for _, name, txt in kept)
+            chunks.append(f'  ["{key}"] = {{\n{body_out}\n  }},\n')
             continue
 
         new_vals = overlay(key, dump_entry, faction_names, rank_names)
@@ -268,6 +298,8 @@ def main() -> int:
         rendered = []
         written = set()
         for ind, name, val_text in fields:
+            if name in REMOVED_FIELDS:
+                continue
             if name in new_vals:
                 rendered.append(f'    {name:13s} = {emit_field_value(name, new_vals[name])},')
                 written.add(name)

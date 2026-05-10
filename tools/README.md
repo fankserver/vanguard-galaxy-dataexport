@@ -27,7 +27,7 @@ Output is the rewritten Lua module. The script prints a per-ship diff to stdout 
 | `speed` / `accel` | `MaxWarpSpeed` / `WarpAcceleration` × 100 (game stores raw units) |
 | `hullScale` / `shieldScale` / `armorScale` | live HP scales |
 | `sizeWeight` / `hardpoints` / `sizeSummary` | hardpoint geometry |
-| `playerLevel` / `shipyardLevel` / `shipyardRep` / `shipyardFaction` / `conquestRank` | `ShopRequirements` (faction id → display name; rank id → per-faction rank name) |
+| `playerLevel` / `shipyardLevel` / `shipyardRep` / `shipyardFactions` / `conquestRank` | `ShopRequirements` (faction id → display name; rank id → per-faction rank name) |
 
 ## Authored fields (never touched)
 
@@ -36,7 +36,8 @@ Output is the rewritten Lua module. The script prints a per-ship diff to stdout 
 ## Special-case behaviour
 
 - **`notForSale = true`**: skips the entire shop overlay. Used for story rewards (Eclipse, Terravex), drones, and NPC-only hulls. The prefab carries a populated `shopItemData`, but the ship never appears in any shipyard stock — the in-game numbers are fictional and shouldn't be published.
-- **`*-Marade` keys**: keep their authored manufacturer (Marade Wharf — the *vendor*) instead of being overwritten with the dump's *original builder*. The wiki tags Marade variants by who sells them, not who built them.
+- **`*-Marade` keys**: keep their authored manufacturer (Marade Wharf — the *vendor*) instead of being overwritten with the dump's *original builder*. The wiki tags Marade variants by who sells them, not who built them. The merger also forces `shipyardFactions = {"Marade Wharf"}` on these slugs, since Marade reissues are sold at Marade Wharf shipyards regardless of the source ship's faction prereqs.
+- **`shipyardFactions`**: list-of-strings, since some hulls (e.g. Chisel Mk II at MiningGuild + Stranded) are stocked across multiple faction shipyards. `nil` means the ship has shop requirements but no faction prereq — i.e. it's available at independent / civilian shipyards. The renderer (`Module:Shipbox.saleClause`) translates this into prose.
 - **`playerLevel`**: emits `"0!"` when the requirement is zero, distinct from a true `"1+"`.
 - **`shipyardLevel`**: emits `"min - max"` when there's an upper bound, else `"min+"`.
 - **`conquestRank`**: translated per-faction (`Stellar Industries` Rank2 → `"Associate"`, `Marauders` Rank2 → `"Cutthroat"`).
