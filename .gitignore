@@ -2,9 +2,11 @@
 **/bin/
 **/obj/
 
-# Vendored game DLLs (symlinks to a local Vanguard Galaxy install or
-# a sibling publicized stub — never commit binaries).
-**/lib/
+# Vendored game DLLs. The publicized STUB (Assembly-CSharp.dll — method
+# signatures only via `assembly-publicizer --strip`, no game IL) IS committed
+# so CI can build the release; everything else under lib/ stays ignored.
+**/lib/*
+!**/lib/Assembly-CSharp.dll
 
 # IDE / editor
 .vs/

@@ -1,0 +1,93 @@
+name: Package release
+
+# Triggers when a GitHub Release is published. Also runnable manually.
+#
+# The plugin references Assembly-CSharp.dll (the game's proprietary
+# assembly). It can't live on a public runner, so the repo commits a
+# PUBLICIZED stub (method signatures only, no IL) at
+# VGDataExport/lib/Assembly-CSharp.dll. CI compiles against the stub;
+# the real runtime assembly takes over in-game via Mono's late binding.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to (re)package"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+    steps:
+      - name: Checkout repo at release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify publicized reference is committed
+        run: |
+          path="VGDataExport/lib/Assembly-CSharp.dll"
+          if [ ! -s "$path" ]; then
+            echo "::error::$path is missing or empty. Regenerate via 'assembly-publicizer --strip <game>/Assembly-CSharp.dll -o $path' and commit. (--strip is required.)"
+            exit 1
+          fi
+          size=$(stat -c%s "$path")
+          if [ "$size" -gt 1572864 ]; then
+            echo "::error::$path is $size bytes — too large to be stripped. Re-run assembly-publicizer WITH --strip."
+            exit 1
+          fi
+          echo "Publicized stripped reference present: $(du -h "$path" | cut -f1)"
+
+      - name: Build VGDataExport.dll
+        run: dotnet build VGDataExport/VGDataExport.csproj -c Debug --nologo
+
+      - name: Stage release layout
+        id: stage
+        run: |
+          VERSION=$(grep 'PluginVersion =' VGDataExport/Plugin.cs | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          PKG_NAME="VGDataExport-v${VERSION}"
+          # Nested VGDataExport/ is intentional: it's the folder the user
+          # drops into BepInEx/plugins/.
+          PKG_DIR="dist/${PKG_NAME}/VGDataExport"
+
+          rm -rf "dist/${PKG_NAME}"
+          mkdir -p "$PKG_DIR"
+
+          # Ship VGDataExport.dll + Newtonsoft.Json.dll (game 0.8.1 removed
+          # Newtonsoft from Managed/, so the plugin must carry its own copy).
+          cp VGDataExport/bin/Debug/netstandard2.1/VGDataExport.dll "$PKG_DIR/"
+          cp VGDataExport/bin/Debug/netstandard2.1/Newtonsoft.Json.dll "$PKG_DIR/"
+          cp README.md "$PKG_DIR/"
+          [ -f LICENSE ] && cp LICENSE "$PKG_DIR/" || true
+
+          SIZE=$(du -sh "$PKG_DIR" | cut -f1)
+          echo "Staged DLLs + README — $SIZE at $PKG_DIR"
+
+          echo "pkg_name=${PKG_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Zip release bundle
+        run: |
+          (cd "dist/${{ steps.stage.outputs.pkg_name }}" && \
+             zip -qr "../${{ steps.stage.outputs.pkg_name }}.zip" VGDataExport)
+          ls -lh "dist/${{ steps.stage.outputs.pkg_name }}.zip"
+
+      - name: Upload zip to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$TAG" "dist/${{ steps.stage.outputs.pkg_name }}.zip" --clobber
+          echo "Uploaded ${{ steps.stage.outputs.pkg_name }}.zip to release $TAG"
