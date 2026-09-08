@@ -17,7 +17,7 @@ namespace VGDataExport;
 public class Plugin : BaseUnityPlugin
 {
     public const string PluginGuid    = "vgdataexport";
-    public const string PluginName    = "Vanguard Galaxy Data Export";
+    public const string PluginName    = "Data Export";
     public const string PluginVersion = "0.2.0";
 
     internal static ManualLogSource Log { get; private set; } = null!;

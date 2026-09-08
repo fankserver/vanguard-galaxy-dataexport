@@ -3,7 +3,7 @@
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
     <AssemblyName>VGDataExport</AssemblyName>
-    <Product>Vanguard Galaxy Data Export</Product>
+    <Product>Data Export</Product>
     <Version>0.1.0</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
